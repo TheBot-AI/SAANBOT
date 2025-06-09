@@ -7,75 +7,77 @@ import requests
 app = Flask(__name__)
 CORS(app)
 
-# MongoDB connection from environment
-MONGO_URI = os.environ.get("MONGO_URI")
+# MongoDB connection (environment variable)
+MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["SAANBOT"]
 
-collections = ["company_info", "services", "contacts", "brands", "awards"]
+# Groq API
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_MODEL = "mixtral-8x7b-32768"
 
 @app.route("/")
 def home():
-    return "✅ SAANBOT is running."
+    return "SAANBOT is live!"
 
 @app.route("/ask", methods=["POST"])
 def handle_query():
     try:
-        user_question = request.json.get("question")
-        if not user_question:
-            return jsonify({"response": "❌ Please enter a question."}), 400
+        question = request.json.get("query", "").strip()
+        if not question:
+            return jsonify({"response": "Please enter a valid question."}), 400
 
-        # Fetch knowledge base
+        collections = ["company_info", "services", "contacts", "awards", "brands"]
         data = {}
         for collection in collections:
-            try:
-                data[collection] = list(db[collection].find({}, {"_id": 0}))
-            except Exception:
-                data[collection] = []
+            data[collection] = list(db[collection].find({}, {"_id": 0}))
 
-        # Ask Groq
-        groq_key = os.environ.get("GROQ_API_KEY")
-        if not groq_key:
-            return jsonify({"response": "❌ GROQ_API_KEY missing."}), 500
+        # Format services into bullet points with descriptions
+        services = [f"- {s.get('name')} ({s.get('description', 'No description')})" for s in data.get("services", [])]
+        service_list = "\n".join(services)
 
+        # Compose the prompt
         prompt = f"""
-You are SAANBOT, the official AI assistant for SAAN Protocol Experts.
-Answer based only on the data below:
+You are SAANBOT, a helpful and professional AI assistant working for SAAN Protocol Experts.
 
-Company Info: {data.get("company_info", [])}
-Services: {data.get("services", [])}
-Contacts: {data.get("contacts", [])}
-Brands: {data.get("brands", [])}
-Awards: {data.get("awards", [])}
+Based on the available data below, answer the user's question as clearly and helpfully as possible.
 
-User Question: "{user_question}"
+Available Services:
+{service_list}
+
+If the answer cannot be found in the provided data, politely say:
+"I'm sorry, I couldn't find that specific detail in my current data. For more information, please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
+
+User's Question: {question}
 """
 
+        # Call Groq API
         groq_response = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
-                "Authorization": f"Bearer {groq_key}",
+                "Authorization": f"Bearer {GROQ_API_KEY}",
                 "Content-Type": "application/json"
             },
             json={
-                "model": "llama3-8b-8192",
+                "model": GROQ_MODEL,
                 "messages": [
-                    {"role": "system", "content": "You are a helpful company assistant."},
+                    {"role": "system", "content": "You are a helpful AI assistant."},
                     {"role": "user", "content": prompt}
                 ]
-            }
+            },
+            timeout=30
         )
 
-        if groq_response.status_code != 200:
-            return jsonify({"response": "❌ Groq AI error."}), 500
+        groq_data = groq_response.json()
+        reply = groq_data["choices"][0]["message"]["content"]
 
-        reply = groq_response.json()["choices"][0]["message"]["content"]
         return jsonify({"response": reply})
 
     except Exception as e:
+        print("Error:", e)
         return jsonify({
-            "response": f"❌ Server error: {str(e)}"
+            "response": "I'm sorry, an error occurred while trying to fetch that information. Please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
         }), 500
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=10000)
+    app.run(debug=False, host="0.0.0.0", port=10000)
