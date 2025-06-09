@@ -3,56 +3,61 @@ from flask_cors import CORS
 from pymongo import MongoClient
 import os
 import requests
+import logging
 
 app = Flask(__name__)
 CORS(app)
 
-# MongoDB connection (environment variable)
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+
+# MongoDB setup
 MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["SAANBOT"]
 
-# Groq API
+# Groq API setup
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "mixtral-8x7b-32768"
 
 @app.route("/")
-def home():
-    return "SAANBOT is live!"
+def index():
+    return "✅ SAANBOT backend is running.", 200
 
 @app.route("/ask", methods=["POST"])
-def handle_query():
+def ask():
     try:
-        question = request.json.get("query", "").strip()
-        if not question:
-            return jsonify({"response": "Please enter a valid question."}), 400
+        payload = request.get_json(force=True)
+        question = payload.get("query", "").strip()
 
-        collections = ["company_info", "services", "contacts", "awards", "brands"]
+        if not question:
+            return jsonify({"response": "❗Please enter a valid question."}), 400
+
+        # Load data from MongoDB
         data = {}
-        for collection in collections:
+        for collection in ["company_info", "services", "contacts", "awards", "brands"]:
             data[collection] = list(db[collection].find({}, {"_id": 0}))
 
-        # Format services into bullet points with descriptions
-        services = [f"- {s.get('name')} ({s.get('description', 'No description')})" for s in data.get("services", [])]
-        service_list = "\n".join(services)
+        # Format services if available
+        services = data.get("services", [])
+        services_list = "\n".join([f"- {s.get('name')} ({s.get('description', 'No description')})" for s in services])
 
-        # Compose the prompt
         prompt = f"""
-You are SAANBOT, a helpful and professional AI assistant working for SAAN Protocol Experts.
+You are SAANBOT, a professional AI assistant for SAAN Protocol Experts.
 
-Based on the available data below, answer the user's question as clearly and helpfully as possible.
+Below is the available company data:
 
-Available Services:
-{service_list}
-
-If the answer cannot be found in the provided data, politely say:
-"I'm sorry, I couldn't find that specific detail in my current data. For more information, please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
+Services Offered:
+{services_list or "No services data available"}
 
 User's Question: {question}
+
+If the information cannot be found, reply with:
+"I'm sorry, I couldn't find that specific detail in my current data. For more information, please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
 """
 
         # Call Groq API
-        groq_response = requests.post(
+        res = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
                 "Authorization": f"Bearer {GROQ_API_KEY}",
@@ -65,18 +70,18 @@ User's Question: {question}
                     {"role": "user", "content": prompt}
                 ]
             },
-            timeout=30
+            timeout=20
         )
 
-        groq_data = groq_response.json()
+        groq_data = res.json()
         reply = groq_data["choices"][0]["message"]["content"]
 
         return jsonify({"response": reply})
 
     except Exception as e:
-        print("Error:", e)
+        logging.exception("Error during processing")
         return jsonify({
-            "response": "I'm sorry, an error occurred while trying to fetch that information. Please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
+            "response": "❌ An error occurred while fetching the answer. Please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
         }), 500
 
 if __name__ == "__main__":
