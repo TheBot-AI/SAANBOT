@@ -14,7 +14,7 @@ GROQ_MODEL = "llama3-70b-8192"
 # ====== Initialize App and DB ======
 app = Flask(__name__)
 CORS(app)
-client = MongoClient(MONGO_URI)
+client = MongoClient(MONGO_URI, tls=True, tlsAllowInvalidCertificates=True)
 db = client["SAANBOT"]
 
 # ====== Helper: Ask Groq ======
