@@ -49,10 +49,33 @@ def ask():
             for s in services
         ])
 
-        prompt = f"""
-You are SAANBOT, a professional AI assistant for SAAN Protocol Experts.
+        # Format company_info fields
+        company = data.get("company_info", [{}])[0]
+        about = company.get("about", "Not available")
+        vision = company.get("vision", "Not available")
+        founded = company.get("founded_year", "Not available")
+        hq = company.get("headquarters", "Not available")
+        address = company.get("address", "Not available")
+        company_phone = company.get("phone", "Not available")
+        awards = "\n".join(f"- {a}" for a in company.get("awards", [])) or "None listed"
+        brands = "\n".join(f"- {b}" for b in company.get("brands", [])) or "None listed"
 
-Below is the available company data:
+        prompt = f"""
+You are SAANBOT, a professional AI assistant for SAAN Protocol Experts Pvt. Ltd.
+
+Company Information:
+- About: {about}
+- Vision: {vision}
+- Founded Year: {founded}
+- Headquarters: {hq}
+- Address: {address}
+- Phone: {company_phone}
+
+Awards:
+{awards}
+
+Brands We Work With:
+{brands}
 
 Services Offered:
 {services_list or "No services data available."}
