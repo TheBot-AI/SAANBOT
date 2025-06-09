@@ -3,20 +3,21 @@ from flask_cors import CORS
 from pymongo import MongoClient
 import requests
 import os
+from dotenv import load_dotenv
 
-# === CONFIG ===
+# ====== Load Environment Variables ======
+load_dotenv()
+MONGO_URI = os.getenv("MONGO_URI")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "llama3-70b-8192"
-MONGO_URI = "mongodb://localhost:27017/"
-DB_NAME = "SAANBOT"
 
-# === INIT ===
+# ====== Initialize App and DB ======
 app = Flask(__name__)
 CORS(app)
 client = MongoClient(MONGO_URI)
-db = client[DB_NAME]
+db = client["SAANBOT"]
 
-# === GROQ PROMPT FUNCTION ===
+# ====== Helper: Ask Groq ======
 def ask_groq(system_prompt, user_query):
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
@@ -26,38 +27,48 @@ def ask_groq(system_prompt, user_query):
     payload = {
         "model": GROQ_MODEL,
         "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_query}
+            { "role": "system", "content": system_prompt },
+            { "role": "user", "content": user_query }
         ],
         "temperature": 0.4
     }
     res = requests.post(url, headers=headers, json=payload)
+    res.raise_for_status()
     return res.json()["choices"][0]["message"]["content"]
 
-# === ROUTE: /ask ===
+# ====== Route: /ask ======
 @app.route("/ask", methods=["POST"])
 def handle_query():
-    user_input = request.json.get("query", "")
+    user_query = request.json.get("query", "")
 
-    # Fetch all data from MongoDB
-    info = {col: list(db[col].find({}, {"_id": 0})) for col in [
-        "company_info", "contacts", "services", "awards", "brands", "products"
-    ]}
+    # Fetch from all relevant collections
+    data = {}
+    for collection in ["company_info", "contacts", "services", "awards", "brands", "products"]:
+        data[collection] = list(db[collection].find({}, {"_id": 0}))
 
-    # Build system prompt
+    # System Prompt for Groq
     system_prompt = f"""
-You are SAANBOT, the official assistant for SAAN Protocol Experts Pvt Ltd.
-You can answer queries about the company, services, awards, contact info, and product offerings.
+You are SAANBOT, the official chatbot for SAAN Protocol Experts Pvt Ltd.
 
-Here is the company's data:
-{info}
+You can answer questions about:
+- Company profile and history
+- Key contacts
+- Awards and recognitions
+- Services and solutions offered
+- Associated brands and featured products
 
-Answer user queries truthfully and concisely in a friendly, professional tone.
+Here is the current database content:
+{data}
+
+Reply as a helpful professional assistant. If info is missing, say 'I don't have that information right now.'
 """
 
-    answer = ask_groq(system_prompt, user_input)
-    return jsonify({"response": answer})
+    try:
+        answer = ask_groq(system_prompt, user_query)
+        return jsonify({ "response": answer })
+    except Exception as e:
+        return jsonify({ "error": str(e) }), 500
 
-# === MAIN ===
+# ====== Main ======
 if __name__ == "__main__":
     app.run(debug=True)
