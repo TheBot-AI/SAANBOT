@@ -35,7 +35,7 @@ def ask():
 
         # Load data from MongoDB
         data = {}
-        for collection in ["company_info", "services", "contacts", "awards", "brands"]:
+        for collection in ["company_info", "services", "contacts", "awards", "brands", "products"]:
             try:
                 data[collection] = list(db[collection].find({}, {"_id": 0}))
             except Exception as db_err:
@@ -48,6 +48,13 @@ def ask():
             f"- {s.get('name')} ({s.get('description', 'No description')})"
             for s in services
         ])
+
+        # Format product list
+        products = data.get("products", [])
+        product_list = "\n".join([
+            f"- {p.get('name')} | Brand: {p.get('brand')} | Category: {p.get('category')} | ₹{p.get('price_inr')} | Notes: {p.get('notes')}"
+            for p in products
+        ]) or "No products listed."
 
         # Format company_info fields
         company = data.get("company_info", [{}])[0]
@@ -79,6 +86,9 @@ Brands We Work With:
 
 Services Offered:
 {services_list or "No services data available."}
+
+Available Products:
+{product_list}
 
 User's Question: {question}
 
