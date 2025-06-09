@@ -16,9 +16,9 @@ MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["SAANBOT"]
 
-# Groq API setup
+# ✅ Use free-tier supported Groq model
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
-GROQ_MODEL = "mixtral-8x7b-32768"
+GROQ_MODEL = "llama3-8b-8192"
 
 @app.route("/")
 def index():
@@ -36,11 +36,18 @@ def ask():
         # Load data from MongoDB
         data = {}
         for collection in ["company_info", "services", "contacts", "awards", "brands"]:
-            data[collection] = list(db[collection].find({}, {"_id": 0}))
+            try:
+                data[collection] = list(db[collection].find({}, {"_id": 0}))
+            except Exception as db_err:
+                logging.warning(f"Could not fetch collection '{collection}': {db_err}")
+                data[collection] = []
 
         # Format services if available
         services = data.get("services", [])
-        services_list = "\n".join([f"- {s.get('name')} ({s.get('description', 'No description')})" for s in services])
+        services_list = "\n".join([
+            f"- {s.get('name')} ({s.get('description', 'No description')})"
+            for s in services
+        ])
 
         prompt = f"""
 You are SAANBOT, a professional AI assistant for SAAN Protocol Experts.
@@ -48,7 +55,7 @@ You are SAANBOT, a professional AI assistant for SAAN Protocol Experts.
 Below is the available company data:
 
 Services Offered:
-{services_list or "No services data available"}
+{services_list or "No services data available."}
 
 User's Question: {question}
 
@@ -70,12 +77,16 @@ If the information cannot be found, reply with:
                     {"role": "user", "content": prompt}
                 ]
             },
-            timeout=20
+            timeout=30
         )
 
         groq_data = res.json()
-        reply = groq_data["choices"][0]["message"]["content"]
+        logging.info("Groq response: %s", groq_data)
 
+        if "choices" not in groq_data:
+            raise ValueError("Missing 'choices' in Groq response")
+
+        reply = groq_data["choices"][0]["message"]["content"]
         return jsonify({"response": reply})
 
     except Exception as e:
