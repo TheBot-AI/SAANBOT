@@ -23,7 +23,7 @@ client = MongoClient(
 )
 db = client["SAANBOT"]
 
-# ====== Route: Health Check ======
+# ===== Health Route =====
 @app.route("/")
 def home():
     return "SAANBOT is live 🚀", 200
@@ -32,26 +32,29 @@ def home():
 def health():
     return "✅ SAANBOT is healthy", 200
 
-# ====== Helper: Ask Groq ======
+# ===== Ask Groq with Error Handling =====
 def ask_groq(system_prompt, user_query):
-    url = "https://api.groq.com/openai/v1/chat/completions"
-    headers = {
-        "Authorization": f"Bearer {GROQ_API_KEY}",
-        "Content-Type": "application/json"
-    }
-    payload = {
-        "model": GROQ_MODEL,
-        "messages": [
-            { "role": "system", "content": system_prompt },
-            { "role": "user", "content": user_query }
-        ],
-        "temperature": 0.4
-    }
-    response = requests.post(url, headers=headers, json=payload)
-    response.raise_for_status()
-    return response.json()["choices"][0]["message"]["content"]
+    try:
+        url = "https://api.groq.com/openai/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": GROQ_MODEL,
+            "messages": [
+                { "role": "system", "content": system_prompt },
+                { "role": "user", "content": user_query }
+            ],
+            "temperature": 0.4
+        }
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        return response.json()["choices"][0]["message"]["content"]
+    except Exception as e:
+        return f"⚠️ Error talking to Groq API: {str(e)}"
 
-# ====== Main Chat Route ======
+# ===== /ask Chat Endpoint =====
 @app.route("/ask", methods=["POST"])
 def handle_query():
     user_query = request.json.get("query", "").strip()
@@ -59,36 +62,33 @@ def handle_query():
         return jsonify({ "error": "No query provided." }), 400
 
     try:
-        # Fetch all relevant collections
         data = {}
-        for collection in ["company_info", "contacts", "services", "awards", "brands", "products"]:
-            data[collection] = list(db[collection].find({}, {"_id": 0}))
+        collections = ["company_info", "contacts", "services", "awards", "brands", "products"]
 
-        # Build system prompt
+        for collection in collections:
+            try:
+                data[collection] = list(db[collection].find({}, {"_id": 0}))
+            except Exception as ce:
+                data[collection] = [{"error": f"Failed to fetch {collection}: {str(ce)}"}]
+
+        # Prompt context
         system_prompt = f"""
-You are SAANBOT, a helpful assistant for SAAN Protocol Experts Pvt Ltd.
+You are SAANBOT, an AI assistant for SAAN Protocol Experts Pvt Ltd.
 
-You answer questions about:
-- Company background and services
-- Contact details of key personnel
-- Awards and recognitions
-- Services like AV, signage, VC
-- Brands associated (e.g., Sony, Samsung)
-- Products available (if any listed)
+You must answer based only on the information below:
 
-Use only this database content to answer:
 {data}
 
-If information is missing, say "I'm sorry, I don't have that detail at the moment."
+If the answer is not available, say "I'm sorry, I don't have that detail at the moment."
 """
 
-        reply = ask_groq(system_prompt, user_query)
-        return jsonify({ "response": reply })
+        bot_reply = ask_groq(system_prompt, user_query)
+        return jsonify({ "response": bot_reply })
 
     except Exception as e:
-        return jsonify({ "error": str(e) }), 500
+        return jsonify({ "error": f"Internal Server Error: {str(e)}" }), 500
 
-# ====== Run ======
+# ===== Run App =====
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
