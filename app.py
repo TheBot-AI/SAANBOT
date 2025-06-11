@@ -5,6 +5,7 @@ import os
 import requests
 import logging
 from datetime import datetime
+import re
 
 app = Flask(__name__)
 CORS(app)
@@ -24,6 +25,16 @@ GROQ_MODEL = "llama3-8b-8192"
 @app.route("/")
 def index():
     return "✅ SAANBOT backend is running.", 200
+
+def extract_lead_info(text):
+    name_match = re.search(r"\b(?:name\s*is|I'm|I am)\s*([A-Z][a-z]+\s[A-Z][a-z]+)", text, re.I)
+    phone_match = re.search(r"\b(\+91[\s\-]?\d{10}|\d{10})\b", text)
+    email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", text)
+    return {
+        "name": name_match.group(1) if name_match else None,
+        "phone": phone_match.group(1) if phone_match else None,
+        "email": email_match.group(0) if email_match else None
+    }
 
 @app.route("/ask", methods=["POST"])
 def ask():
@@ -93,6 +104,9 @@ Available Products:
 
 User's Question: {question}
 
+Important Instruction:
+If the question appears to be a sales inquiry or request for service, ask the user for their name, phone number, and email so our team can reach out.
+
 If the information cannot be found, reply with:
 "I'm sorry, I couldn't find that specific detail in my current data. For more information, please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
 """
@@ -138,6 +152,22 @@ If the information cannot be found, reply with:
             })
         except Exception as log_err:
             logging.warning(f"⚠️ Failed to log chat: {log_err}")
+
+        # ✅ Check and save lead if contact info is present
+        lead_info = extract_lead_info(question)
+        if lead_info["phone"] and lead_info["email"]:
+            try:
+                db["leads"].insert_one({
+                    "name": lead_info["name"] or "Unknown",
+                    "email": lead_info["email"],
+                    "phone": lead_info["phone"],
+                    "message": question,
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "source": "SAANBOT"
+                })
+                logging.info("✅ Lead captured in MongoDB.")
+            except Exception as e:
+                logging.warning(f"⚠️ Failed to save lead: {e}")
 
         return jsonify({"response": reply})
 
