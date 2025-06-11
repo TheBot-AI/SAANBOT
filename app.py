@@ -81,6 +81,18 @@ def ask():
         awards = "\n".join(f"- {a}" for a in company.get("awards", [])) or "None listed"
         brands = "\n".join(f"- {b}" for b in company.get("brands", [])) or "None listed"
 
+        # Fetch contact person
+        contact = company.get("contact_person", {})
+        contact_name = contact.get("name", "Srinivas Perur Varda")
+        contact_email = contact.get("email", "varda@saanpro.com")
+        contact_phone = contact.get("phone", company_phone)
+        contact_block = f"""
+Contact Person:
+- Name: {contact_name}
+- Phone: {contact_phone}
+- Email: {contact_email}
+"""
+
         # Fetch last 3 messages from chatlogs for session
         history_cursor = db["chatlogs"].find(
             {"metadata.session_id": session_id},
@@ -94,7 +106,7 @@ def ask():
             message_history.append({"role": "assistant", "content": msg["response"]})
         message_history.append({"role": "user", "content": question})
 
-        # Inject SAAN info only once
+        # Inject full context
         company_context = f"""
 You are SAANBOT, a professional AI assistant for SAAN Protocol Experts Pvt. Ltd.
 
@@ -105,6 +117,8 @@ Company Information:
 - Headquarters: {hq}
 - Address: {address}
 - Phone: {company_phone}
+
+{contact_block}
 
 Awards:
 {awards}
@@ -121,7 +135,7 @@ Available Products:
 Important Instruction:
 If the user message is a business inquiry (like product/service request), politely ask for their name, phone number, and email. If they have already given it, continue without asking again.
 If you don’t have the answer, respond with:
-"I'm sorry, I couldn't find that specific detail in my current data. For more information, contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
+"I'm sorry, I couldn't find that specific detail in my current data. For more information, contact {contact_name} at {contact_phone} or visit www.saanpro.com."
 """
         message_history.insert(0, {"role": "system", "content": company_context})
 
