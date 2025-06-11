@@ -4,6 +4,7 @@ from pymongo import MongoClient
 import os
 import requests
 import logging
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
@@ -120,6 +121,24 @@ If the information cannot be found, reply with:
             raise ValueError("Missing 'choices' in Groq response")
 
         reply = groq_data["choices"][0]["message"]["content"]
+
+        # ✅ Save chat to 'chatlogs'
+        try:
+            db["chatlogs"].insert_one({
+                "user_id": payload.get("user_id", "anonymous"),
+                "timestamp": datetime.utcnow().isoformat(),
+                "query": question,
+                "response": reply,
+                "source_collections": list(data.keys()),
+                "metadata": {
+                    "ip": request.remote_addr,
+                    "platform": "web",
+                    "session_id": payload.get("session_id", "unknown")
+                }
+            })
+        except Exception as log_err:
+            logging.warning(f"⚠️ Failed to log chat: {log_err}")
+
         return jsonify({"response": reply})
 
     except Exception as e:
