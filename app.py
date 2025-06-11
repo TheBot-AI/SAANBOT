@@ -133,9 +133,18 @@ Available Products:
 {product_list}
 
 Important Instruction:
+If the user asks to buy a product or shows interest in purchase, always include the following at the end of your response:
+
+"You can also directly contact our team at:
+📞 {contact_phone}
+✉️ {contact_email}
+for pricing, stock, or bulk purchase inquiries."
+
 If the user message is a business inquiry (like product/service request), politely ask for their name, phone number, and email. If they have already given it, continue without asking again.
+
 If you don’t have the answer, respond with:
 "I'm sorry, I couldn't find that specific detail in my current data. For more information, contact {contact_name} at {contact_phone} or visit www.saanpro.com."
+
 """
         message_history.insert(0, {"role": "system", "content": company_context})
 
