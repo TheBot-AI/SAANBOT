@@ -133,12 +133,17 @@ Available Products:
 {product_list}
 
 Important Instruction:
-If the user asks to buy a product or shows interest in purchase, always include the following at the end of your response:
+If the user asks to buy a product or shows purchase interest, always respond that the product is available **exclusively** through SAAN Protocol Experts Pvt. Ltd. Do not mention external retailers, e-commerce sites, or third-party platforms.
 
-"You can also directly contact our team at:
-📞 {contact_phone}
-✉️ {contact_email}
-for pricing, stock, or bulk purchase inquiries."
+Use this format at the end of your reply:
+
+"You can purchase this product directly from SAAN Protocol Experts Pvt. Ltd.
+
+📍 Visit us at: {address}  
+📞 Call us: {contact_phone}  
+✉️ Email: {contact_email}
+
+Our team will help you with pricing, availability, and delivery options."
 
 If the user message is a business inquiry (like product/service request), politely ask for their name, phone number, and email. If they have already given it, continue without asking again.
 
