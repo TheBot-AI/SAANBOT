@@ -18,16 +18,12 @@ MONGO_URI = os.getenv("MONGO_URI")
 client = MongoClient(MONGO_URI)
 db = client["SAANBOT"]
 
-# ✅ Use free-tier supported Groq model
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
 GROQ_MODEL = "llama3-8b-8192"
 
-@app.route("/")
-def index():
-    return "✅ SAANBOT backend is running.", 200
-
+# Helper: extract name/phone/email
 def extract_lead_info(text):
-    name_match = re.search(r"\b(?:name\s*is|I'm|I am)\s*([A-Z][a-z]+\s[A-Z][a-z]+)", text, re.I)
+    name_match = re.search(r"(?:name\s*is|I'm|I am)\s*([A-Z][a-z]+(?:\s[A-Z][a-z]+)+)", text, re.I)
     phone_match = re.search(r"\b(\+91[\s\-]?\d{10}|\d{10})\b", text)
     email_match = re.search(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", text)
     return {
@@ -36,16 +32,22 @@ def extract_lead_info(text):
         "email": email_match.group(0) if email_match else None
     }
 
+@app.route("/")
+def index():
+    return "✅ SAANBOT backend is running.", 200
+
 @app.route("/ask", methods=["POST"])
 def ask():
     try:
         payload = request.get_json(force=True)
         question = payload.get("query", "").strip()
+        user_id = payload.get("user_id", "anonymous")
+        session_id = payload.get("session_id", "unknown")
 
         if not question:
             return jsonify({"response": "❗Please enter a valid question."}), 400
 
-        # Load data from MongoDB
+        # Load collections
         data = {}
         for collection in ["company_info", "services", "contacts", "awards", "brands", "products"]:
             try:
@@ -54,21 +56,21 @@ def ask():
                 logging.warning(f"Could not fetch collection '{collection}': {db_err}")
                 data[collection] = []
 
-        # Format services if available
+        # Format services
         services = data.get("services", [])
         services_list = "\n".join([
             f"- {s.get('name')} ({s.get('description', 'No description')})"
             for s in services
         ])
 
-        # Format product list
+        # Format products
         products = data.get("products", [])
         product_list = "\n".join([
             f"- {p.get('name')} | Brand: {p.get('brand')} | Category: {p.get('category')} | ₹{p.get('price_inr')} | Notes: {p.get('notes')}"
             for p in products
         ]) or "No products listed."
 
-        # Format company_info fields
+        # Company info
         company = data.get("company_info", [{}])[0]
         about = company.get("about", "Not available")
         vision = company.get("vision", "Not available")
@@ -79,7 +81,21 @@ def ask():
         awards = "\n".join(f"- {a}" for a in company.get("awards", [])) or "None listed"
         brands = "\n".join(f"- {b}" for b in company.get("brands", [])) or "None listed"
 
-        prompt = f"""
+        # Fetch last 3 messages from chatlogs for session
+        history_cursor = db["chatlogs"].find(
+            {"metadata.session_id": session_id},
+            {"_id": 0, "query": 1, "response": 1}
+        ).sort("timestamp", -1).limit(3)
+        history = list(history_cursor)[::-1]
+
+        message_history = [{"role": "system", "content": "You are a helpful AI assistant."}]
+        for msg in history:
+            message_history.append({"role": "user", "content": msg["query"]})
+            message_history.append({"role": "assistant", "content": msg["response"]})
+        message_history.append({"role": "user", "content": question})
+
+        # Inject SAAN info only once
+        company_context = f"""
 You are SAANBOT, a professional AI assistant for SAAN Protocol Experts Pvt. Ltd.
 
 Company Information:
@@ -102,16 +118,14 @@ Services Offered:
 Available Products:
 {product_list}
 
-User's Question: {question}
-
 Important Instruction:
-If the question appears to be a sales inquiry or request for service, ask the user for their name, phone number, and email so our team can reach out.
-
-If the information cannot be found, reply with:
-"I'm sorry, I couldn't find that specific detail in my current data. For more information, please contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
+If the user message is a business inquiry (like product/service request), politely ask for their name, phone number, and email. If they have already given it, continue without asking again.
+If you don’t have the answer, respond with:
+"I'm sorry, I couldn't find that specific detail in my current data. For more information, contact Srinivas Perur Varda at +91 9342659932 or visit www.saanpro.com."
 """
+        message_history.insert(0, {"role": "system", "content": company_context})
 
-        # Call Groq API
+        # Call Groq
         res = requests.post(
             "https://api.groq.com/openai/v1/chat/completions",
             headers={
@@ -120,54 +134,43 @@ If the information cannot be found, reply with:
             },
             json={
                 "model": GROQ_MODEL,
-                "messages": [
-                    {"role": "system", "content": "You are a helpful AI assistant."},
-                    {"role": "user", "content": prompt}
-                ]
+                "messages": message_history
             },
             timeout=30
         )
 
         groq_data = res.json()
-        logging.info("Groq response: %s", groq_data)
-
         if "choices" not in groq_data:
             raise ValueError("Missing 'choices' in Groq response")
 
         reply = groq_data["choices"][0]["message"]["content"]
 
-        # ✅ Save chat to 'chatlogs'
-        try:
-            db["chatlogs"].insert_one({
-                "user_id": payload.get("user_id", "anonymous"),
-                "timestamp": datetime.utcnow().isoformat(),
-                "query": question,
-                "response": reply,
-                "source_collections": list(data.keys()),
-                "metadata": {
-                    "ip": request.remote_addr,
-                    "platform": "web",
-                    "session_id": payload.get("session_id", "unknown")
-                }
-            })
-        except Exception as log_err:
-            logging.warning(f"⚠️ Failed to log chat: {log_err}")
+        # Save chat
+        db["chatlogs"].insert_one({
+            "user_id": user_id,
+            "timestamp": datetime.utcnow().isoformat(),
+            "query": question,
+            "response": reply,
+            "source_collections": list(data.keys()),
+            "metadata": {
+                "ip": request.remote_addr,
+                "platform": "web",
+                "session_id": session_id
+            }
+        })
 
-        # ✅ Check and save lead if contact info is present
+        # Check for contact info
         lead_info = extract_lead_info(question)
         if lead_info["phone"] and lead_info["email"]:
-            try:
-                db["leads"].insert_one({
-                    "name": lead_info["name"] or "Unknown",
-                    "email": lead_info["email"],
-                    "phone": lead_info["phone"],
-                    "message": question,
-                    "timestamp": datetime.utcnow().isoformat(),
-                    "source": "SAANBOT"
-                })
-                logging.info("✅ Lead captured in MongoDB.")
-            except Exception as e:
-                logging.warning(f"⚠️ Failed to save lead: {e}")
+            db["leads"].insert_one({
+                "name": lead_info["name"] or "Unknown",
+                "email": lead_info["email"],
+                "phone": lead_info["phone"],
+                "message": question,
+                "timestamp": datetime.utcnow().isoformat(),
+                "source": "SAANBOT"
+            })
+            logging.info("✅ Lead captured in MongoDB.")
 
         return jsonify({"response": reply})
 
