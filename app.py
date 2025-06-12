@@ -172,6 +172,21 @@ If you don’t have the answer, respond with:
             raise ValueError("Missing 'choices' in Groq response")
 
         reply = groq_data["choices"][0]["message"]["content"]
+        # Detect buying intent
+        purchase_keywords = ["buy", "purchase", "quote", "get this", "interested in", "need this", "want this", "price of", "how much", "cost of"]
+        if any(keyword in question.lower() for keyword in purchase_keywords):
+            reply += """
+
+🛒 You can view our complete product catalog here:  
+🔗 https://merry-klepon-368950.netlify.app/
+
+💡 For **best pricing**, bulk orders, or personalized expert recommendations, please contact us directly:  
+📞 +91 9342659932  
+✉️ varda@saanpro.com
+
+We offer better deals, faster support, and tailored solutions when you buy directly from SAAN Protocol Experts Pvt. Ltd. 💼
+"""
+
 
         # Save chat
         db["chatlogs"].insert_one({
