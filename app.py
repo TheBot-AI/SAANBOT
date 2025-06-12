@@ -177,7 +177,7 @@ If you don’t have the answer, respond with:
         if any(keyword in question.lower() for keyword in purchase_keywords):
             reply += """
 
-🛒 You can view our complete product catalog here:  
+🛒 Alternatively you can purchase products here:  
 🔗 https://merry-klepon-368950.netlify.app/
 
 💡 For **best pricing**, bulk orders, or personalized expert recommendations, please contact us directly:  
